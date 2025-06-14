@@ -84,7 +84,6 @@ def parse_output(data: str) -> dict[str, dict[str, Any]]:
             if line.startswith("Memory Device"):
                 continue
 
-            key, value = line.strip().split(": ", maxsplit=1)
             try:
                 key, value = line.strip().split(": ", maxsplit=1)
             except ValueError:
