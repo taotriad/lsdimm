@@ -1,0 +1,7 @@
+*.swo
+*.swp
+__pycache__
+.mypy_cache
+.coverage
+coverage.json
+htmlcov

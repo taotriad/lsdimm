@@ -1,0 +1,164 @@
+#! /bin/sh
+# vim: ts=4 filetype=python expandtab shiftwidth=4 softtabstop=4 syntax=python
+''''eval version=$( ls /usr/bin/python3.* | \
+    grep '.*[0-9]$' | sort -nr -k2 -t. | head -n1 ) && \
+    version=${version##/usr/bin/python3.} && [ ${version} ] && \
+    [ ${version} -ge 9 ] && exec /usr/bin/python3.${version} "$0" "$@" || \
+    exec /usr/bin/env python3 "$0" "$@"' #'''
+# The above hack is to handle distros where /usr/bin/python3
+# doesn't point to the latest version of python3 they provide
+
+import copy
+import errno
+import subprocess  # nosec
+from subprocess import PIPE, STDOUT  # nosec
+import sys
+from typing import Any
+
+
+ERROR: str = "\033[0;31m"        # red
+RESET: str = "\033[0m"           # reset all attributes
+PROGRAMNAME: str = "\033[1;37m"  # white + bright
+HEADER: str = "\033[1;37m"       # white + bright
+
+use_ansicodes: bool = True
+# In some cases the voltage information may be incorrect
+# Options:
+#   "Minimum Voltage"
+#   "Maximum Voltage"
+#   "Configured Voltage"
+#   "Heuristic"  (Configured Voltage unless it's less than 1.0V; this may need to be adjusted down
+#                 if some type of low power DIMM is released that consumes less than that)
+voltage_source: str = "Heuristic"
+
+programname: str = "lsdimm"
+
+
+def parse_output(data: str) -> dict[str, dict[str, Any]]:
+    global voltage_source  # pylint: disable=global-statement
+    dimms: dict[str, dict[str, Any]] = {"tmp": {}}
+    block: bool = False
+
+    for line in data:
+        # A block ends when we get an empty line
+        if block:
+            if line == "":
+                dimm_bank_locator = dimms["tmp"].get("Bank Locator", "<empty>")
+                dimm_locator = dimms["tmp"].get("Locator", "<empty>")
+                dimm_handle = f"{dimm_bank_locator}, {dimm_locator}"
+                dimm_size = dimms["tmp"].get("Size", "<empty>")
+                dimm_type = dimms["tmp"].get("Type", "<empty>")
+                dimm_speed = dimms["tmp"].get("Speed", "<empty>")
+                if voltage_source == "Heuristic":
+                    voltage_source = "Configured Voltage"
+                dimm_configured_voltage = dimms["tmp"].get(voltage_source, "<empty>")
+                try:
+                    if float(dimm_configured_voltage.split(" ", maxsplit=1)[0]) < 1.0:
+                        dimm_configured_voltage = dimms["tmp"].get("Minimum Voltage", "<empty>")
+                except ValueError:
+                    pass
+                try:
+                    if float(dimm_configured_voltage.split(" ", maxsplit=1)[0]) < 1.0:
+                        dimm_configured_voltage = dimms["tmp"].get("Maximum Voltage", "<empty>")
+                except ValueError:
+                    pass
+                try:
+                    if float(dimm_configured_voltage.split(" ", maxsplit=1)[0]) < 1.0:
+                        dimm_configured_voltage = "<unavailable>"
+                except ValueError:
+                    dimm_configured_voltage = "<unavailable>"
+
+                dimm_manufacturer = dimms["tmp"].get("Manufacturer", "<empty>")
+                dimm_part_number = dimms["tmp"].get("Part Number", "<empty>")
+                dimms[dimm_handle] = {
+                    "Size": dimm_size,
+                    "Type": dimm_type,
+                    "Speed": dimm_speed,
+                    "Voltage": dimm_configured_voltage,
+                    "Manufacturer": dimm_manufacturer,
+                    "Part Number": dimm_part_number,
+                }
+                block = False
+                continue
+
+            if line.startswith("Memory Device"):
+                continue
+
+            key, value = line.strip().split(": ", maxsplit=1)
+            try:
+                key, value = line.strip().split(": ", maxsplit=1)
+            except ValueError:
+                if line.strip().endswith(":"):
+                    key = line[:-1]
+                    value = "<empty>"
+                else:
+                    raise
+            dimms["tmp"][key] = value
+
+        if line.startswith("Handle"):
+            # Flush the previous temporary block
+            dimms["tmp"] = {}
+            block = True
+
+    dimms.pop("tmp", None)
+
+    return dimms
+
+
+# pylint: disable-next=too-many-branches,too-many-statements,too-many-locals
+def main() -> None:
+    """
+    Main function for the program.
+    """
+    args = ["/usr/sbin/dmidecode", "-t", "17"]
+    try:
+        result = subprocess.run(args, stdout=PIPE, stderr=STDOUT, check=False)
+        tmp_data = result.stdout.decode("utf-8", errors="replace")
+        if "Permission denied" in tmp_data or "Can't read memory" in tmp_data:
+            print(f"{ERROR}Error{RESET}: Could not access data from "
+                  f"{PROGRAMNAME}dmidecode{RESET}"
+                  f"; this program probably needs to be executed with root privileges.")
+            sys.exit(errno.EPERM)
+        data = tmp_data.splitlines()
+    except Exception as e:
+        raise
+
+    dimms = parse_output(data)
+
+    widths: list[int] = [0, 0, 0, 0, 0]
+    rows: list[tuple(str, ...)] = [("Locator:", "Size:", "Speed + Voltage:",
+                                    "Manufacturer:", "Part Number:")]
+
+    for dimm, data in dimms.items():
+        row: list[str] = []
+        row.append(dimm)
+        row.append(data["Size"])
+        row.append(f"{data['Speed']}, {data['Voltage']}")
+        row.append(data["Manufacturer"])
+        row.append(data["Part Number"])
+        rows.append(tuple(row))
+
+    for i, row in enumerate(rows):
+        for j, column in enumerate(row):
+            widths[j] = max(widths[j], len(column))
+
+    output: str = ""
+
+    for i, row in enumerate(rows):
+        for j, column in enumerate(row):
+            # First row is a header, so we might want formatting
+            formatting: str = ""
+            end_formatting: str = ""
+            if use_ansicodes:
+                formatting: str = RESET
+                end_formatting: str = RESET
+                if not i:
+                    formatting = HEADER
+
+            output += f"{formatting}{column.ljust(widths[j] + 2)}{end_formatting}"
+        output += "\n"
+
+    print(output)
+
+if __name__ == "__main__":
+    main()
