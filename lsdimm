@@ -27,9 +27,10 @@ use_ansicodes: bool = True
 #   "Minimum Voltage"
 #   "Maximum Voltage"
 #   "Configured Voltage"
-#   "Heuristic"  (Configured Voltage unless it's less than 1.0V; this may need to be adjusted down
+#   "Heuristic"  (Configured Voltage unless it's less than 0.25V this may need to be adjusted down
 #                 if some type of low power DIMM is released that consumes less than that)
 voltage_source: str = "Heuristic"
+voltage_limit: float = 0.25
 
 programname: str = "lsdimm"
 
@@ -51,22 +52,22 @@ def parse_output(data: str) -> dict[str, dict[str, Any]]:
                 dimm_speed = dimms["tmp"].get("Speed", "<empty>")
                 if voltage_source == "Heuristic":
                     voltage_source = "Configured Voltage"
-                dimm_configured_voltage = dimms["tmp"].get(voltage_source, "<empty>")
+                dimm_voltage = dimms["tmp"].get(voltage_source, "<empty>")
                 try:
-                    if float(dimm_configured_voltage.split(" ", maxsplit=1)[0]) < 1.0:
-                        dimm_configured_voltage = dimms["tmp"].get("Minimum Voltage", "<empty>")
+                    if float(dimm_voltage.split(" ", maxsplit=1)[0]) < voltage_limit:
+                        dimm_voltage = dimms["tmp"].get("Minimum Voltage", "<empty>")
                 except ValueError:
                     pass
                 try:
-                    if float(dimm_configured_voltage.split(" ", maxsplit=1)[0]) < 1.0:
-                        dimm_configured_voltage = dimms["tmp"].get("Maximum Voltage", "<empty>")
+                    if float(dimm_voltage.split(" ", maxsplit=1)[0]) < voltage_limit:
+                        dimm_voltage = dimms["tmp"].get("Maximum Voltage", "<empty>")
                 except ValueError:
                     pass
                 try:
-                    if float(dimm_configured_voltage.split(" ", maxsplit=1)[0]) < 1.0:
-                        dimm_configured_voltage = "<unavailable>"
+                    if float(dimm_voltage.split(" ", maxsplit=1)[0]) < voltage_limit:
+                        dimm_voltage = "<unavailable>"
                 except ValueError:
-                    dimm_configured_voltage = "<unavailable>"
+                    dimm_voltage = "<unavailable>"
 
                 dimm_manufacturer = dimms["tmp"].get("Manufacturer", "<empty>")
                 dimm_part_number = dimms["tmp"].get("Part Number", "<empty>")
@@ -74,7 +75,7 @@ def parse_output(data: str) -> dict[str, dict[str, Any]]:
                     "Size": dimm_size,
                     "Type": dimm_type,
                     "Speed": dimm_speed,
-                    "Voltage": dimm_configured_voltage,
+                    "Voltage": dimm_voltage,
                     "Manufacturer": dimm_manufacturer,
                     "Part Number": dimm_part_number,
                 }
