@@ -10,18 +10,35 @@
 
 import copy
 import errno
+from pathlib import Path
 import subprocess  # nosec
 from subprocess import PIPE, STDOUT  # nosec
 import sys
 from typing import Any
 
+HOMEDIR = Path.home()
 
-ERROR: str = "\033[0;31m"        # red
-RESET: str = "\033[0m"           # reset all attributes
-PROGRAMNAME: str = "\033[1;37m"  # white + bright
-HEADER: str = "\033[1;37m"       # white + bright
+# Strict set of paths; only distro-provided binaries
+dmidecode_paths: list[str] = ["/usr/sbin/dmidecode", "/sbin/dmidecode"]
+# Wider set of paths that contains locally installed packages
+# dmidecode_paths: list[str] = ["/usr/sbin/dmidecode", "/sbin/dmidecode", "/opt/bin/dmidecode",
+#                               "/usr/local/bin/dmidecode", f"{HOMEDIR}/bin/dmidecode"]
 
 use_ansicodes: bool = True
+if not sys.stderr.isatty() or not sys.stdout.isatty():
+    use_ansicodes = False
+
+if use_ansicodes:
+    ERROR: str = "\033[0;31m"        # red
+    RESET: str = "\033[0m"           # reset all attributes
+    PROGRAMNAME: str = "\033[1;37m"  # white + bright
+    HEADER: str = "\033[1;37m"       # white + bright
+else:
+    ERROR = ""
+    RESET = ""
+    PROGRAMNAME = ""
+    HEADER = ""
+
 # In some cases the voltage information may be incorrect
 # Options:
 #   "Minimum Voltage"
@@ -32,7 +49,40 @@ use_ansicodes: bool = True
 voltage_source: str = "Heuristic"
 voltage_limit: float = 0.25
 
-programname: str = "lsdimm"
+program_name: str = "lsdimm"
+program_version: str = "0.0.1"
+program_copyright: str = "Copyright © 2025 David Weinehall"
+program_license = "This is free software; see the source for copying conditions.  There is NO\n"
+program_license += "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+program_authors = "Written by David Weinehall."
+
+
+def usage() -> None:
+    """
+    Display usage information for the program.
+    """
+
+    print(f"{PROGRAMNAME}{program_name}{RESET} [OPTION]")
+    print()
+    print("Display information about memory configuration in a terse manner.")
+    print()
+    print("help|--help            Display this help and exit")
+    print("version|--version      Output version information and exit")
+    return 0
+
+
+def version() -> None:
+    """
+    Display version information for the program.
+    """
+
+    print(f"{PROGRAMNAME}{program_name}{RESET} {program_version}")
+    print()
+    print(program_copyright)
+    print(program_license)
+    print()
+    print(program_authors)
+    return 0
 
 
 def parse_output(data: str) -> dict[str, dict[str, Any]]:
@@ -110,18 +160,49 @@ def main() -> None:
     """
     Main function for the program.
     """
-    args = ["/usr/sbin/dmidecode", "-t", "17"]
-    try:
-        result = subprocess.run(args, stdout=PIPE, stderr=STDOUT, check=False)
-        tmp_data = result.stdout.decode("utf-8", errors="replace")
-        if "Permission denied" in tmp_data or "Can't read memory" in tmp_data:
-            print(f"{ERROR}Error{RESET}: Could not access data from "
+    for i, arg in enumerate(sys.argv):
+        if not i:
+            continue
+
+        if arg in ("help", "--help"):
+            usage()
+            sys.exit(0)
+        if arg in ("version", "--version"):
+            version()
+            sys.exit(0)
+        print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument.",
+              file=sys.stderr)
+        print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+              file=sys.stderr)
+        sys.exit(errno.EINVAL)
+
+
+    dmidecode_args: list[str] = ["-t", "17"]
+    data: liist[str] = []
+    dmidecode_missing: bool = True
+
+    for dmidecode_path in dmidecode_paths:
+        try:
+            result = subprocess.run([dmidecode_path] + dmidecode_args,
+                                    stdout=PIPE, stderr=STDOUT, check=False)
+            tmp_data = result.stdout.decode("utf-8", errors="replace")
+            if "Permission denied" in tmp_data or "Can't read memory" in tmp_data:
+                print(f"{ERROR}Error{RESET}: Could not access data from "
+                      f"{PROGRAMNAME}dmidecode{RESET}"
+                      f"; this program probably needs to be executed with root privileges.")
+                sys.exit(errno.EPERM)
+            data = tmp_data.splitlines()
+            dmidecode_missing = False
+            break
+        except FileNotFoundError as e:
+            continue
+
+    if not data:
+        if dmidecode_missing:
+            print(f"{ERROR}Error{RESET}: Could not find "
                   f"{PROGRAMNAME}dmidecode{RESET}"
-                  f"; this program probably needs to be executed with root privileges.")
-            sys.exit(errno.EPERM)
-        data = tmp_data.splitlines()
-    except Exception as e:
-        raise
+                  f"; is it installed?")
+            sys.exit(errno.ENOENT)
 
     dimms = parse_output(data)
 
@@ -147,13 +228,10 @@ def main() -> None:
     for i, row in enumerate(rows):
         for j, column in enumerate(row):
             # First row is a header, so we might want formatting
-            formatting: str = ""
-            end_formatting: str = ""
-            if use_ansicodes:
-                formatting: str = RESET
-                end_formatting: str = RESET
-                if not i:
-                    formatting = HEADER
+            formatting: str = RESET
+            end_formatting: str = RESET
+            if not i:
+                formatting = HEADER
 
             output += f"{formatting}{column.ljust(widths[j] + 2)}{end_formatting}"
         output += "\n"
