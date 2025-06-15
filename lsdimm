@@ -206,14 +206,15 @@ def main() -> None:
 
     dimms = parse_output(data)
 
-    widths: list[int] = [0, 0, 0, 0, 0]
-    rows: list[tuple(str, ...)] = [("Locator:", "Size:", "Speed + Voltage:",
+    widths: list[int] = [0, 0, 0, 0, 0, 0]
+    rows: list[tuple(str, ...)] = [("Locator:", "Size:", "Type:", "Speed + Voltage:",
                                     "Manufacturer:", "Part Number:")]
 
     for dimm, data in dimms.items():
         row: list[str] = []
         row.append(dimm)
         row.append(data["Size"])
+        row.append(data["Type"])
         row.append(f"{data['Speed']}, {data['Voltage']}")
         row.append(data["Manufacturer"])
         row.append(data["Part Number"])
