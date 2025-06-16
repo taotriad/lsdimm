@@ -8,7 +8,10 @@
 # The above hack is to handle distros where /usr/bin/python3
 # doesn't point to the latest version of python3 they provide
 
+from enum import IntEnum
 import errno
+import json
+from operator import itemgetter
 from pathlib import Path
 import subprocess  # nosec
 from subprocess import PIPE, STDOUT  # nosec
@@ -23,21 +26,14 @@ dmidecode_paths: list[str] = ["/usr/sbin/dmidecode", "/sbin/dmidecode"]
 # dmidecode_paths: list[str] = ["/usr/sbin/dmidecode", "/sbin/dmidecode", "/opt/bin/dmidecode",
 #                               "/usr/local/bin/dmidecode", f"{HOMEDIR}/bin/dmidecode"]
 
-use_ansicodes: bool = True
-if not sys.stderr.isatty() or not sys.stdout.isatty():
-    # pylint: disable-next=invalid-name
-    use_ansicodes = False
+ERROR: str = "\033[0;31m"              # red
+RESET: str = "\033[0m"                 # reset all attributes
+PROGRAMNAME: str = "\033[1;37m"        # white + bright
+HEADER: str = "\033[1;37m"             # white + bright
+DIM: str = "\033[38;5;240m\033[1m"     # grey + dim + bold
+OPTION: str = "\033[0;36m"             # cyan
+ARGUMENT: str = "\033[0;32m"           # green
 
-if use_ansicodes:
-    ERROR: str = "\033[0;31m"        # red
-    RESET: str = "\033[0m"           # reset all attributes
-    PROGRAMNAME: str = "\033[1;37m"  # white + bright
-    HEADER: str = "\033[1;37m"       # white + bright
-else:
-    ERROR = ""
-    RESET = ""
-    PROGRAMNAME = ""
-    HEADER = ""
 
 # In some cases the voltage information may be incorrect
 # Options:
@@ -49,8 +45,33 @@ else:
 voltage_source: str = "Heuristic"
 voltage_limit: float = 0.25
 
+
+class SortColumn(IntEnum):
+    """
+    Sort column for the DIMM list.
+    """
+    DEFAULT = 0
+    LOCATOR = 0
+    SIZE = 1
+    TYPE = 2
+    SPEED_AND_VOLTAGE = 3
+    MANUFACTURER = 4
+    PART_NUMBER = 5
+    INVALID = -1
+
+
+sort_column_lookup: dict[str, SortColumn] = {
+    "default": SortColumn.DEFAULT,
+    "locator": SortColumn.LOCATOR,
+    "size": SortColumn.SIZE,
+    "type": SortColumn.TYPE,
+    "speed-and-voltage": SortColumn.SPEED_AND_VOLTAGE,
+    "manufacturer": SortColumn.MANUFACTURER,
+    "part-number": SortColumn.PART_NUMBER,
+}
+
 program_name: str = "lsdimm"
-program_version: str = "0.0.1"
+program_version: str = "0.0.2"
 program_copyright: str = "Copyright © 2025 David Weinehall"
 program_license: str = "This is free software; see the source for copying conditions.  " \
                        "There is NO\n"
@@ -67,8 +88,27 @@ def usage() -> int:
     print()
     print("Display information about memory configuration in a terse manner.")
     print()
-    print("help|--help            Display this help and exit")
-    print("version|--version      Output version information and exit")
+    print(f"{OPTION}--color{RESET} {ARGUMENT}WHEN{RESET}               {ARGUMENT}WHEN{RESET} "
+          "should the output use ANSI-colors.")
+    print("                             Valid options are:")
+    print(f"                             {ARGUMENT}always{RESET}, {ARGUMENT}auto{RESET}, "
+          f"{ARGUMENT}never{RESET}")
+    print(f"{OPTION}--format{RESET} {ARGUMENT}FORMAT{RESET}            "
+          f"Output the result as {ARGUMENT}FORMAT{RESET}.")
+    print("                             Valid options are:")
+    print(f"                             {ARGUMENT}default{RESET}, {ARGUMENT}json{RESET}, "
+          f"{ARGUMENT}text{RESET}")
+    print(f"{OPTION}--reverse{RESET}                  Reverse sort order")
+    print(f"{OPTION}--sort-column{RESET} {ARGUMENT}SORT_COLUMN{RESET}  "
+          f"Use {ARGUMENT}SORT_COLUMN{RESET} as sort-column.")
+    print("                             Valid options are:")
+    print(f"                             {ARGUMENT}default{RESET}, {ARGUMENT}locator{RESET}, "
+          f"{ARGUMENT}size{RESET}, {ARGUMENT}type{RESET},")
+    print(f"                             {ARGUMENT}speed-and-voltage{RESET}, "
+          f"{ARGUMENT}manufacturer{RESET}, {ARGUMENT}part-number{RESET}")
+    print()
+    print(f"{OPTION}help{RESET}|{OPTION}--help{RESET}          Display this help and exit")
+    print(f"{OPTION}version{RESET}|{OPTION}--version{RESET}    Output version information and exit")
     return 0
 
 
@@ -84,6 +124,37 @@ def version() -> int:
     print()
     print(program_authors)
     return 0
+
+
+def configure_ansicodes(use_ansicodes: str = "auto") -> None:
+    """
+    Configure use of ANSI-codes.
+    """
+    global ERROR, RESET, PROGRAMNAME, HEADER, DIM  # pylint: disable=global-statement
+    global OPTION, ARGUMENT  # pylint: disable=global-statement
+
+    if use_ansicodes == "auto":
+        if not sys.stderr.isatty() or not sys.stdout.isatty():
+            use_ansicodes = "never"
+        else:
+            use_ansicodes = "always"
+
+    if use_ansicodes == "always":
+        ERROR = "\033[0;31m"              # red
+        RESET = "\033[0m"                 # reset all attributes
+        PROGRAMNAME = "\033[1;37m"        # white + bright
+        HEADER = "\033[1;37m"             # white + bright
+        DIM = "\033[38;5;240m\033[1m"     # grey + dim + bold
+        OPTION = "\033[0;36m"             # cyan
+        ARGUMENT = "\033[0;32m"           # green
+    else:
+        ERROR = ""
+        RESET = ""
+        PROGRAMNAME = ""
+        HEADER = ""
+        DIM = ""
+        OPTION = ""
+        ARGUMENT = ""
 
 
 # pylint: disable-next=too-many-branches
@@ -165,7 +236,7 @@ def parse_output(data: list[str]) -> dict[str, dict[str, Any]]:
     return dimms
 
 
-# pylint: disable-next=too-many-branches,too-many-locals
+# pylint: disable-next=too-many-branches,too-many-locals,too-many-statements
 def main() -> int:
     """
     Main function for the program.
@@ -173,16 +244,124 @@ def main() -> int:
         Returns:
             0 on success, errno on failure
     """
-    for i, arg in enumerate(sys.argv):
-        if not i:
-            continue
+    output_format: str = "text"
+    sort_column: SortColumn = SortColumn.DEFAULT
+    reverse: bool = False
+    color: str = "auto"
+
+    i: int = 1
+
+    while i < len(sys.argv):
+        arg = sys.argv[i]
 
         if arg in ("help", "--help"):
             usage()
             sys.exit(0)
+
         if arg in ("version", "--version"):
             version()
             sys.exit(0)
+
+        if arg == "--color":
+            i += 1
+            if i >= len(sys.argv):
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Missing argument for "
+                      f"{OPTION}--color{RESET}.",
+                      file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+            color = sys.argv[i]
+            if color not in ("always", "auto", "never"):
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument for "
+                      f"{OPTION}--color{RESET}; "
+                      f"{ARGUMENT}WHEN{RESET} must be one of:",
+                      file=sys.stderr)
+
+                color_options: str = ""
+
+                for i, color_option in enumerate(("always", "auto", "never")):
+                    if i > 0:
+                        color_options += ", "
+                    color_options += f"{ARGUMENT}{color_option}{RESET}"
+
+                print(color_options, file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+            configure_ansicodes(use_ansicodes=color)
+            i += 1
+            continue
+
+        if arg == "--format":
+            i += 1
+            if i >= len(sys.argv):
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Missing argument for "
+                      f"{OPTION}--format{RESET}.",
+                      file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+            output_format = sys.argv[i]
+            if output_format not in ("default", "json", "text"):
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument for "
+                      f"{OPTION}--format{RESET}; "
+                      f"{ARGUMENT}FORMAT{RESET} must be one of:",
+                      file=sys.stderr)
+
+                format_options: str = ""
+
+                for i, format_option in enumerate(("default", "json", "text")):
+                    if i > 0:
+                        format_options += ", "
+                    format_options += f"{ARGUMENT}{format_option}{RESET}"
+
+                print(format_options, file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+            if output_format == "default":
+                output_format = "text"
+            i += 1
+            continue
+
+        if arg == "--reverse":
+            reverse = True
+            i += 1
+            continue
+
+        if arg == "--sort-column":
+            i += 1
+            if i >= len(sys.argv):
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Missing argument for "
+                      f"{OPTION}--sort-column{RESET}.",
+                      file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+
+            sort_column = sort_column_lookup.get(sys.argv[i], SortColumn.INVALID)
+
+            if sort_column == -1:
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument for "
+                      f"{OPTION}--sort-column{RESET}; "
+                      f"{ARGUMENT}SORT_COLUMN{RESET} must be one of:",
+                      file=sys.stderr)
+
+                columns: str = ""
+
+                for i, column in enumerate(sort_column_lookup):
+                    if i > 0:
+                        columns += ", "
+                    columns += f"{ARGUMENT}{column}{RESET}"
+
+                print(columns, file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+            i += 1
+            continue
+
         print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument.",
               file=sys.stderr)
         print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
@@ -218,9 +397,15 @@ def main() -> int:
 
     dimms: dict[str, dict[str, Any]] = parse_output(data)
 
+    output: str = ""
+
+    if output_format == "json":
+        output = json.dumps(dimms, indent=2)
+        print(output)
+        return 0
+
     widths: list[int] = [0, 0, 0, 0, 0, 0]
-    rows: list[list[str]] = [["Locator:", "Size:", "Type:", "Speed + Voltage:",
-                              "Manufacturer:", "Part Number:"]]
+    rows: list[list[str]] = []
 
     for dimm_handle, dimm in dimms.items():
         row: list[str] = []
@@ -232,19 +417,25 @@ def main() -> int:
         row.append(dimm["Part Number"])
         rows.append(row)
 
+    rows = sorted(rows, key=itemgetter(sort_column), reverse=reverse)
+    rows = [["Locator:", "Size:", "Type:", "Speed + Voltage:",
+             "Manufacturer:", "Part Number:"]] + rows
+
     for i, row in enumerate(rows):
         for j, column in enumerate(row):
             widths[j] = max(widths[j], len(column))
 
-    output: str = ""
-
     for i, row in enumerate(rows):
+        populated: bool = row[SortColumn.SIZE] != "No Module Installed"
+
         for j, column in enumerate(row):
             # First row is a header, so we might want formatting
             formatting: str = RESET
             end_formatting: str = RESET
             if not i:
                 formatting = HEADER
+            elif not populated:
+                formatting = DIM
 
             output += f"{formatting}{column.ljust(widths[j] + 2)}{end_formatting}"
         output += "\n"
