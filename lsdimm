@@ -9,6 +9,7 @@ This program shows information about the memory configuration of a system
 in a terse manner.
 """
 
+import copy
 from enum import IntEnum
 import errno
 import json
@@ -73,7 +74,7 @@ sort_column_lookup: dict[str, SortColumn] = {
 }
 
 program_name: str = "lsdimm"
-program_version: str = "0.0.3"
+program_version: str = "0.0.4"
 program_copyright: str = "Copyright © 2025 David Weinehall"
 program_license: str = "This is free software; see the source for copying conditions.  " \
                        "There is NO\n"
@@ -101,8 +102,18 @@ def usage() -> int:
     print("                                   Valid options are:")
     print(f"                                   {ARGUMENT}default{RESET}, {ARGUMENT}json{RESET}, "
           f"{ARGUMENT}text{RESET}")
+    print(f"{OPTION}--no-stats{RESET}                       "
+          f"Do not output detailed information")
+    print("                                   "
+          "This option cannot be combined")
+    print("                                   "
+          f"with {OPTION}--no-summary{RESET}")
     print(f"{OPTION}--no-summary{RESET}                     "
-          "Do not output a summary")
+          f"Do not output a summary")
+    print("                                   "
+          "This option cannot be combined")
+    print("                                   "
+          f"with {OPTION}--no-stats{RESET}")
     print(f"{OPTION}--reverse{RESET}                        "
           "Reverse sort order")
     print(f"{OPTION}--sort-column{RESET} {ARGUMENT}SORT_COLUMN{RESET}        "
@@ -268,6 +279,7 @@ def main() -> int:
     reverse: bool = False
     color: str = "auto"
     summary_keys: list[str] = ["manufacturer"]
+    no_stats: bool = False
     no_summary: bool = False
 
     i: int = 1
@@ -343,6 +355,11 @@ def main() -> int:
                 sys.exit(errno.EINVAL)
             if output_format == "default":
                 output_format = "text"
+            i += 1
+            continue
+
+        if arg == "--no-stats":
+            no_stats = True
             i += 1
             continue
 
@@ -439,6 +456,14 @@ def main() -> int:
               file=sys.stderr)
         sys.exit(errno.EINVAL)
 
+    if no_stats and no_summary:
+        print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid arguments; "
+              f"{OPTION}--no-stats{RESET} cannot be combined with {OPTION}--no-summary{RESET}.",
+              file=sys.stderr)
+        print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+              file=sys.stderr)
+        sys.exit(errno.EINVAL)
+
     dmidecode_args: list[str] = ["-t", "17"]
     data: list[str] = []
     dmidecode_missing: bool = True
@@ -467,11 +492,6 @@ def main() -> int:
             sys.exit(errno.ENOENT)
 
     dimms: dict[str, dict[str, Any]] = parse_output(data)
-
-    if output_format == "json":
-        json_output: str = json.dumps(dimms, indent=2)
-        print(json_output)
-        return 0
 
     widths: list[int] = [0, 0, 0, 0, 0, 0]
     rows: list[list[str]] = []
@@ -511,6 +531,16 @@ def main() -> int:
         summary[dimm_key]["Count"] += 1
         summary[dimm_key]["Location"].append(dimm_handle)
 
+    if output_format == "json":
+        output_dict: dict[str, dict[str, Any]] = {}
+        if not no_stats:
+            output_dict = {**output_dict, **dimms}
+        if not no_summary:
+            output_dict["Summary"] = copy.deepcopy(summary)
+        json_output: str = json.dumps(output_dict, indent=2)
+        print(json_output)
+        return 0
+
     rows = sorted(rows, key=itemgetter(sort_column), reverse=reverse)
     rows = [["Locator:", "Size:", "Type:", "Speed + Voltage:",
              "Manufacturer:", "Part Number:"]] + rows
@@ -521,23 +551,24 @@ def main() -> int:
 
     lines: list[str] = []
 
-    for i, row in enumerate(rows):
-        populated: bool = row[SortColumn.SIZE] != "No Module Installed"
-        output: str = ""
+    if not no_stats:
+        for i, row in enumerate(rows):
+            populated: bool = row[SortColumn.SIZE] != "No Module Installed"
+            output: str = ""
 
-        for j, column in enumerate(row):
-            # First row is a header, so we might want formatting
-            formatting: str = RESET
-            end_formatting: str = RESET
-            if not i:
-                formatting = HEADER
-            elif not populated:
-                formatting = DIM
+            for j, column in enumerate(row):
+                # First row is a header, so we might want formatting
+                formatting: str = RESET
+                end_formatting: str = RESET
+                if not i:
+                    formatting = HEADER
+                elif not populated:
+                    formatting = DIM
 
-            output += f"{formatting}{column.ljust(widths[j] + 2)}{end_formatting}"
-        lines.append(output)
+                output += f"{formatting}{column.ljust(widths[j] + 2)}{end_formatting}"
+            lines.append(output)
 
-    print("\n".join(lines))
+        print("\n".join(lines))
 
     if not no_summary:
         print(f"\n{HEADER}Count:{RESET}  {HEADER}Type + Location:{RESET}")
