@@ -23,7 +23,7 @@ MYPY_FLAGS := --follow-imports silent --explicit-package-bases --ignore-missing 
 
 
 bin: checks
-	@devtools/mangle_source.py lsdimm > bin/lsdimm
+	@mkdir -p bin && devtools/mangle_source.py lsdimm > bin/lsdimm && chmod a+x bin/lsdimm
 
 clean:
 	@rm bin/lsdimm
