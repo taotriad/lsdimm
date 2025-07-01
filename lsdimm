@@ -73,8 +73,16 @@ sort_column_lookup: dict[str, SortColumn] = {
     "part-number": SortColumn.PART_NUMBER,
 }
 
+# Some DMI data return incorrect vendor data; correct it.
+vendor_quirks: dict[str, str] = {
+    "1315": "Crucial",
+    "0821": "EVGA",
+    "JEDEC 1D:01 98": "Kingston",
+    "Kinston": "Kingston",
+}
+
 program_name: str = "lsdimm"
-program_version: str = "0.0.4"
+program_version: str = "0.0.5"
 program_copyright: str = "Copyright © 2025 David Weinehall"
 program_license: str = "This is free software; see the source for copying conditions.  " \
                        "There is NO\n"
@@ -97,6 +105,12 @@ def usage() -> int:
     print("                                   Valid options are:")
     print(f"                                   {ARGUMENT}always{RESET}, {ARGUMENT}auto{RESET}, "
           f"{ARGUMENT}never{RESET}")
+    print(f"{OPTION}--fix-quirks{RESET} {ARGUMENT}QUIRK{SEPARATOR},{ARGUMENT}...{RESET}           "
+          f"Fix known quirks")
+    print("                                   Valid options are:")
+    print(f"                                   {ARGUMENT}all{RESET}, "
+          f"{ARGUMENT}manufacturer{RESET}, {ARGUMENT}none{RESET}")
+    print(f"                                   Default: {ARGUMENT}all{RESET}")
     print(f"{OPTION}--format{RESET} {ARGUMENT}FORMAT{RESET}                  "
           f"Output the result as {ARGUMENT}FORMAT{RESET}")
     print("                                   Valid options are:")
@@ -132,7 +146,8 @@ def usage() -> int:
     print("                                   if a DIMM-type is unique; additional keys")
     print("                                   may be used.")
     print("                                   Valid additional keys are:")
-    print(f"                                   {ARGUMENT}manufacturer{RESET}, "
+    print(f"                                   {ARGUMENT}all{RESET}, "
+          f"{ARGUMENT}manufacturer{RESET}, "
           f"{ARGUMENT}none{RESET}, "
           f"{ARGUMENT}part-number{RESET}")
     print(f"                                   Default: {ARGUMENT}manufacturer{RESET}")
@@ -187,19 +202,22 @@ def configure_ansicodes(use_ansicodes: str = "auto") -> None:
         ARGUMENT = ""
 
 
-# pylint: disable-next=too-many-branches
-def parse_output(data: list[str]) -> dict[str, dict[str, Any]]:
+# pylint: disable-next=too-many-branches,too-many-locals,too-many-statements
+def parse_output(data: list[str], **kwargs: Any) -> dict[str, dict[str, Any]]:
     """
     Parse the output from dmidecode.
 
         Parameters:
             data ([str]): The output from dmidecode split into lines
+            **kwargs (dict[str, Any]): Keyword arguments
+                quirks (list[str]): A list of quirks to apply
         Returns:
             (dict[str, dict[str, Any]]): A dictionary with information for each DIMM.
     """
     global voltage_source  # pylint: disable=global-statement
     dimms: dict[str, dict[str, Any]] = {"tmp": {}}
     block: bool = False
+    quirks: list[str] = kwargs.get("quirks", [])
 
     for line in data:
         # A block ends when we get an empty line
@@ -231,6 +249,9 @@ def parse_output(data: list[str]) -> dict[str, dict[str, Any]]:
                     dimm_voltage = "<unavailable>"
 
                 dimm_manufacturer = dimms["tmp"].get("Manufacturer", "<empty>")
+                if dimm_manufacturer in vendor_quirks \
+                        and "manufacturer" in quirks:
+                    dimm_manufacturer = vendor_quirks[dimm_manufacturer]
                 dimm_part_number = dimms["tmp"].get("Part Number", "<empty>")
                 dimms[dimm_handle] = {
                     "Size": dimm_size,
@@ -281,6 +302,8 @@ def main() -> int:
     summary_keys: list[str] = ["manufacturer"]
     no_stats: bool = False
     no_summary: bool = False
+    valid_real_quirks: set[str] = {"manufacturer"}
+    quirks: list[str] = list(valid_real_quirks)
 
     i: int = 1
 
@@ -323,6 +346,65 @@ def main() -> int:
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
             configure_ansicodes(use_ansicodes=color)
+            i += 1
+            continue
+
+        if arg == "--fix-quirks":
+            i += 1
+            if i >= len(sys.argv):
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Missing argument for "
+                      f"{OPTION}--fix-quirks{RESET}.",
+                      file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+
+            quirks = sys.argv[i].split(",")
+
+            valid_quirks: set[str] = {"all", "manufacturer", "none"}
+            invalid_args: set[str] = set(quirks) - valid_quirks
+
+            if invalid_args:
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                      f"{OPTION}--fix-quirks{RESET}; "
+                      f"{ARGUMENT}QUIRK{SEPARATOR},{ARGUMENT}...{RESET} must be one of:",
+                      file=sys.stderr)
+
+                string: str = ""
+
+                for i, quirk in enumerate(valid_quirks):
+                    if i > 0:
+                        string += ", "
+                    string += f"{ARGUMENT}{quirk}{RESET}"
+
+                print(string, file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+
+            if "all" in quirks and len(quirks) > 1:
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                      f"{OPTION}--fix-quirks{RESET}; "
+                      f"{ARGUMENT}all{RESET} cannot be combined with other arguments.",
+                      file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+
+            if "none" in quirks and len(quirks) > 1:
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                      f"{OPTION}--fix-quirks{RESET}; "
+                      f"{ARGUMENT}none{RESET} cannot be combined with other arguments.",
+                      file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+
+            if quirks == ["all"]:
+                quirks = list(valid_real_quirks)
+            if quirks == ["none"]:
+                quirks = []
+
             i += 1
             continue
 
@@ -417,8 +499,9 @@ def main() -> int:
 
             summary_keys = sys.argv[i].split(",")
 
-            valid_summary_keys: set[str] = {"manufacturer", "none", "part-number"}
-            invalid_args: set[str] = set(summary_keys) - valid_summary_keys
+            valid_real_summary_keys: set[str] = {"manufacturer", "part-number"}
+            valid_summary_keys: set[str] = {"all", "manufacturer", "none", "part-number"}
+            invalid_args = set(summary_keys) - valid_summary_keys
 
             if invalid_args:
                 print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
@@ -426,7 +509,7 @@ def main() -> int:
                       f"{ARGUMENT}SUMMARY_KEY{SEPARATOR},{ARGUMENT}...{RESET} must be one of:",
                       file=sys.stderr)
 
-                string: str = ""
+                string = ""
 
                 for i, summary_key in enumerate(valid_summary_keys):
                     if i > 0:
@@ -434,6 +517,15 @@ def main() -> int:
                     string += f"{ARGUMENT}{summary_key}{RESET}"
 
                 print(string, file=sys.stderr)
+                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                      file=sys.stderr)
+                sys.exit(errno.EINVAL)
+
+            if "all" in summary_keys and len(summary_keys) > 1:
+                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                      f"{OPTION}--summary-keys{RESET}; "
+                      f"{ARGUMENT}all{RESET} cannot be combined with other arguments.",
+                      file=sys.stderr)
                 print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
@@ -446,6 +538,11 @@ def main() -> int:
                 print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
+
+            if summary_keys == ["all"]:
+                summary_keys = list(valid_real_summary_keys)
+            if summary_keys == ["none"]:
+                summary_keys = []
 
             i += 1
             continue
@@ -491,7 +588,7 @@ def main() -> int:
                   f"; is it installed?")
             sys.exit(errno.ENOENT)
 
-    dimms: dict[str, dict[str, Any]] = parse_output(data)
+    dimms: dict[str, dict[str, Any]] = parse_output(data, quirks=quirks)
 
     widths: list[int] = [0, 0, 0, 0, 0, 0]
     rows: list[list[str]] = []
