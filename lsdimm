@@ -1,6 +1,8 @@
 #! /usr/bin/env python3
 # [:::MUNGE SHEBANG:::]
 
+# Suggests: python3-natsort
+
 # Copyright David Weinehall.
 # SPDX-License-Identifier: MIT
 
@@ -18,7 +20,12 @@ from pathlib import Path
 import subprocess  # nosec
 from subprocess import PIPE, STDOUT  # nosec
 import sys
-from typing import Any
+from typing import Any, cast
+
+try:
+    from natsort import natsorted
+except ModuleNotFoundError:  # pragma: no cover
+    natsorted = sorted  # type: ignore
 
 HOMEDIR = Path.home()
 
@@ -74,15 +81,274 @@ sort_column_lookup: dict[str, SortColumn] = {
 }
 
 # Some DMI data return incorrect vendor data; correct it.
-vendor_quirks: dict[str, str] = {
-    "1315": "Crucial",
-    "0821": "EVGA",
-    "JEDEC 1D:01 98": "Kingston",
-    "Kinston": "Kingston",
+vendor_quirks: dict[str, dict[str, str]] = {
+    "exact": {
+        "1315": "Crucial",
+        "0821": "EVGA",
+        "Hynix": "SK Hynix",
+        "Hynix Semiconductor": "SK Hynix",
+        "JEDEC 1D:01 98": "Kingston",
+        "Kinston": "Kingston",
+        "Micron Technology": "Micron",
+    },
+    "affixes": {
+        "0001": "AMD",
+        "0002": "AMI",
+        "0083": "Fairchild",
+        "0004": "RAMXEED Limited",
+        "0085": "GTE",
+        "0086": "Harris",
+        "0007": "Hitachi",
+        "0008": "Inmos",
+        "0089": "Intel",
+        "008A": "I.T.T.",
+        "000B": "Intersil",
+        "008C": "Monolithic Memories",
+        "000D": "Mostek",
+        "000E": "Freescale (Motorola)",
+        "008F": "National",
+        "0010": "NEC",
+        "0091": "RCA",
+        "0092": "Raytheon",
+        "0013": "Synaptics",
+        "0094": "Seeq",
+        "0015": "NXP (Philips)",
+        "0016": "Synertek",
+        "0097": "Texas Instruments",
+        "0098": "Kioxia Corporation",
+        "0019": "Xicor",
+        "001A": "Zilog",
+        "009B": "Eurotechnique",
+        "001C": "Mitsubishi",
+        "009D": "Lucent (AT&T)",
+        "009E": "Exel",
+        "001F": "Atmel",
+        "0020": "STMicroelectronics",
+        "00A1": "Lattice Semi.",
+        "00A2": "NCR",
+        "0023": "Wafer Scale Integration",
+        "00A4": "IBM",
+        "0025": "Tristar",
+        "0026": "Visic",
+        "00A7": "Intl. CMOS Technology",
+        "00A8": "SSSI",
+        "0029": "Microchip Technology",
+        "002A": "Ricoh Ltd",
+        "00AB": "VLSI",
+        "002C": "Micron",
+        "00AD": "SK Hynix",
+        "00AE": "OKI Semiconductor",
+        "002F": "ACTEL",
+        "00B0": "Sharp",
+        "0031": "Catalyst",
+        "0032": "Panasonic",
+        "00B3": "IDT",
+        "0034": "Cypress",
+        "00B5": "DEC",
+        "00B6": "LSI Logic",
+        "0037": "Zarlink (Plessey)",
+        "0038": "UTMC",
+        "00B9": "Thinking Machine",
+        "00BA": "Thomson CSF",
+        "003B": "Integrated CMOS (Vertex)",
+        "00BC": "Honeywell",
+        "003D": "Tektronix",
+        "003E": "Oracle Corporation",
+        "00BF": "Silicon Storage Technology",
+        "0040": "ProMos/Mosel Vitelic",
+        "00C1": "Infineon (Siemens)",
+        "00C2": "Macronix",
+        "0043": "Xerox",
+        "00C4": "Plus Logic",
+        "0045": "SanDisk Technologies Inc",
+        "0046": "Elan Circuit Tech.",
+        "00C7": "European Silicon Str.",
+        "00C8": "Apple Computer",
+        "0049": "Xilinx",
+        "004A": "Compaq",
+        "00CB": "Protocol Engines",
+        "004C": "SCI",
+        "00CD": "ABLIC",
+        "00CE": "Samsung",
+        "004F": "I3 Design System",
+        "00D0": "Klic",
+        "0051": "Crosspoint Solutions",
+        "0052": "Alliance Memory Inc",
+        "00D3": "Tandem",
+        "0054": "Hewlett-Packard",
+        "00D5": "Integrated Silicon Solutions",
+        "00D6": "Brooktree",
+        "0057": "New Media",
+        "0058": "MHS Electronic",
+        "00D9": "Performance Semi.",
+        "00DA": "Winbond Electronic",
+        "005B": "Kawasaki Steel",
+        "00DC": "Bright Micro",
+        "005D": "TECMAR",
+        "005E": "Exar",
+        "00DF": "PCMCIA",
+        "00E0": "LG Semi (Goldstar)",
+        "0061": "Northern Telecom",
+        "0062": "Sanyo",
+        "00E3": "Array Microsystems",
+        "0064": "Crystal Semiconductor",
+        "00E5": "Analog Devices",
+        "00E6": "PMC-Sierra",
+        "0067": "Asparix",
+        "0068": "Convex Computer",
+        "00E9": "Quality Semiconductor",
+        "00EA": "Nimbus Technology",
+        "006B": "Transwitch",
+        "00EC": "Micronas (ITT Intermetall)",
+        "006D": "Cannon",
+        "006E": "Altera",
+        "00EF": "NEXCOM",
+        "0070": "Qualcomm",
+        "00F1": "Sony",
+        "00F2": "Cray Research",
+        "0073": "AMS(Austria Micro)",
+        "00F4": "Vitesse",
+        "0075": "Aster Electronics",
+        "0076": "Bay Networks (Synoptic)",
+        "00F7": "Zentrum/ZMD",
+        "00F8": "TRW",
+        "0079": "Thesys",
+        "007A": "Solbourne Computer",
+        "00FB": "Allied-Signal",
+        "007C": "Dialog Semiconductor",
+        "00FD": "Media Vision",
+        "00FE": "Numonyx Corporation",
+        "0101": "Cirrus Logic",
+        "0102": "National Instruments",
+        "0183": "ILC Data Device",
+        "0104": "Alcatel Mietec",
+        "0185": "Micro Linear",
+        "0186": "Univ. of NC",
+        "0107": "JTAG Technologies",
+        "0108": "BAE Systems (Loral)",
+        "0189": "Nchip",
+        "018A": "Galileo Tech",
+        "010B": "Bestlink Systems",
+        "018C": "Graychip",
+        "010D": "GENNUM",
+        "010E": "Imagination Technologies Limited",
+        "018F": "Robert Bosch",
+        "0110": "Chip Express",
+        "0191": "DATARAM",
+        "0192": "United Microelectronics Corp",
+        "0113": "TCSI",
+        "0194": "Smart Modular",
+        "0115": "Hughes Aircraft",
+        "0116": "Lanstar Semiconductor",
+        "0197": "Qlogic",
+        "0198": "Kingston",
+        "0119": "Music Semi",
+        "011A": "Ericsson Components",
+        "019B": "SpaSE",
+        "011C": "Eon Silicon Devices",
+        "019D": "Integrated Silicon Solution (ISSI)",
+        "019E": "DoD",
+        "011F": "Integ. Memories Tech.",
+        "0120": "Corollary Inc",
+        "01A1": "Dallas Semiconductor",
+        "01A2": "Omnivision",
+        "0123": "EIV (Switzerland)",
+        "01A4": "Novatel Wireless",
+        "0125": "Zarlink (Mitel)",
+        "0126": "Clearpoint",
+        "01A7": "Cabletron",
+        "01A8": "STEC (Silicon Tech)",
+        "0129": "Vanguard",
+        "012A": "Hagiwara Solutions Co Ltd",
+        "01AB": "Vantis",
+        "012C": "Celestica",
+        "01AD": "Century",
+        "01AE": "Hal Computers",
+        "012F": "Rohm Company Ltd",
+        "01B0": "Juniper Networks",
+        "0131": "Libit Signal Processing",
+        "0132": "Mushkin Enhanced Memory",
+        "01B3": "Tundra Semiconductor",
+        "0134": "Adaptec Inc",
+        "01B5": "LightSpeed Semi.",
+        "01B6": "ZSP Corp",
+        "0137": "AMIC Technology",
+        "0138": "Adobe Systems",
+        "01B9": "Dynachip",
+        "01BA": "PNY Technologies Inc",
+        "013B": "Newport Digital",
+        "01BC": "MMC Networks",
+        "013D": "T Square",
+        "013E": "Seiko Epson",
+        "01BF": "Broadcom",
+        "0140": "Viking Components",
+        "01C1": "V3 Semiconductor",
+        "01C2": "Flextronics (Orbit Semiconductor)",
+        "0143": "Suwa Electronics",
+        "01C4": "Transmeta",
+        "0145": "Micron CMS",
+        "0146": "American Computer & Digital Components Inc",
+        "01C7": "Enhance 3000 Inc",
+        "01C8": "Tower Semiconductor",
+        "0149": "CPU Design",
+        "014A": "Price Point",
+        "01CB": "Maxim Integrated Product",
+        "014C": "Tellabs",
+        "01CD": "Centaur Technology",
+        "01CE": "Unigen Corporation",
+        "014F": "Transcend",
+        "01D0": "Memory Card Technology",
+        "0151": "CKD Corporation Ltd",
+        "0152": "Capital Instruments Inc",
+        "01D3": "Aica Kogyo Ltd",
+        "0154": "Linvex Technology",
+        "01D5": "MSC Vertriebs GmbH",
+        "01D6": "AKM Company Ltd",
+        "0157": "Dynamem Inc",
+        "0158": "NERA ASA",
+        "01D9": "GSI Technology",
+        "01DA": "Dane-Elec (C Memory)",
+        "015B": "Acorn Computers",
+        "01DC": "Lara Technology",
+        "015D": "Oak Technology Inc",
+        "015E": "Itec Memory",
+        "01DF": "Tanisys Technology",
+        "01E0": "Truevision",
+        "0161": "Wintec Industries",
+        "0162": "Super PC Memory",
+        "01E3": "MGV Memory",
+        "0164": "Galvantech",
+        "01E5": "Gadzoox Networks",
+        "01E6": "Multi Dimensional Cons.",
+        "0167": "GateField",
+        "0168": "Integrated Memory System",
+        "01E9": "Triscend",
+        "01EA": "XaQti",
+        "016B": "Goldenram",
+        "01EC": "Clear Logic",
+        "016D": "Cimaron Communications",
+        "016E": "Nippon Steel Semi. Corp",
+        "01EF": "Advantage Memory",
+        "0170": "AMCC",
+        "01F1": "LeCroy",
+        "01F2": "Yamaha Corporation",
+        "0173": "Digital Microwave",
+        "01F4": "NetLogic Microsystems",
+        "0175": "MIMOS Semiconductor",
+        "0176": "Advanced Fibre",
+        "01F7": "BF Goodrich Data.",
+        "01F8": "Epigram",
+        "0179": "Acbel Polytech Inc",
+        "017A": "Apacer Technology",
+        "01FB": "Admor Memory",
+        "017C": "FOXCONN",
+        "01FD": "Quadratics Superconductor",
+        "01FE": "3COM",
+    },
 }
 
 program_name: str = "lsdimm"
-program_version: str = "0.0.5"
+program_version: str = "0.0.6"
 program_copyright: str = "Copyright © 2025 David Weinehall"
 program_license: str = "This is free software; see the source for copying conditions.  " \
                        "There is NO\n"
@@ -116,6 +382,8 @@ def usage() -> int:
     print("                                   Valid options are:")
     print(f"                                   {ARGUMENT}default{RESET}, {ARGUMENT}json{RESET}, "
           f"{ARGUMENT}text{RESET}")
+    print(f"{OPTION}--group-empty{RESET}                       "
+          f"Group empty memory slots")
     print(f"{OPTION}--no-stats{RESET}                       "
           f"Do not output detailed information")
     print("                                   "
@@ -219,13 +487,17 @@ def parse_output(data: list[str], **kwargs: Any) -> dict[str, dict[str, Any]]:
     block: bool = False
     quirks: list[str] = kwargs.get("quirks", [])
 
+    # pylint: disable-next=too-many-nested-blocks
     for line in data:
         # A block ends when we get an empty line
         if block:
             if line == "":
                 dimm_bank_locator = dimms["tmp"].get("Bank Locator", "<empty>")
                 dimm_locator = dimms["tmp"].get("Locator", "<empty>")
-                dimm_handle = f"{dimm_bank_locator}, {dimm_locator}"
+                dimm_handle = ""
+                if dimm_bank_locator != "Not Specified":
+                    dimm_handle = f"{dimm_bank_locator}, "
+                dimm_handle = dimm_handle + f"{dimm_locator}"
                 dimm_size = dimms["tmp"].get("Size", "<empty>")
                 dimm_type = dimms["tmp"].get("Type", "<empty>")
                 dimm_speed = dimms["tmp"].get("Speed", "<empty>")
@@ -249,9 +521,24 @@ def parse_output(data: list[str], **kwargs: Any) -> dict[str, dict[str, Any]]:
                     dimm_voltage = "<unavailable>"
 
                 dimm_manufacturer = dimms["tmp"].get("Manufacturer", "<empty>")
-                if dimm_manufacturer in vendor_quirks \
-                        and "manufacturer" in quirks:
-                    dimm_manufacturer = vendor_quirks[dimm_manufacturer]
+                if "manufacturer" in quirks:
+                    tmp_dimm_manufacturer = dimm_manufacturer
+                    if dimm_manufacturer in vendor_quirks["exact"]:
+                        dimm_manufacturer = vendor_quirks["exact"][dimm_manufacturer]
+                    else:
+                        for affix in vendor_quirks["affixes"]:
+                            if dimm_manufacturer.startswith(affix):
+                                tmp_dimm_manufacturer = vendor_quirks["affixes"][affix]
+                                if not dimm_manufacturer.endswith(affix):
+                                    # The prefix and suffix can be arbitrary length,
+                                    # but longer entries are added at the end of the JEDEC
+                                    # ID list. Hence we identify the prefix in order,
+                                    # and the suffix in reverse order.
+                                    for affix in reversed(vendor_quirks["affixes"]):
+                                        if dimm_manufacturer.endswith(affix):
+                                            tmp_dimm_manufacturer += \
+                                                f" [{vendor_quirks['affixes'][affix]}]"
+                    dimm_manufacturer = tmp_dimm_manufacturer
                 dimm_part_number = dimms["tmp"].get("Part Number", "<empty>")
                 dimms[dimm_handle] = {
                     "Size": dimm_size,
@@ -304,6 +591,7 @@ def main() -> int:
     no_summary: bool = False
     valid_real_quirks: set[str] = {"manufacturer"}
     quirks: list[str] = list(valid_real_quirks)
+    group_empty: bool = False
 
     i: int = 1
 
@@ -437,6 +725,11 @@ def main() -> int:
                 sys.exit(errno.EINVAL)
             if output_format == "default":
                 output_format = "text"
+            i += 1
+            continue
+
+        if arg == "--group-empty":
+            group_empty = True
             i += 1
             continue
 
@@ -638,7 +931,17 @@ def main() -> int:
         print(json_output)
         return 0
 
-    rows = sorted(rows, key=itemgetter(sort_column), reverse=reverse)
+    rows = natsorted(rows, key=itemgetter(sort_column), reverse=reverse)
+    if group_empty:
+        empty_rows: list[list[str]] = []
+        populated_rows: list[list[str]] = []
+        for row in rows:
+            if row[SortColumn.SIZE] == "No Module Installed":
+                empty_rows.append(row)
+            else:
+                populated_rows.append(row)
+        rows = populated_rows + empty_rows
+
     rows = [["Locator:", "Size:", "Type:", "Speed + Voltage:",
              "Manufacturer:", "Part Number:"]] + rows
 
@@ -669,7 +972,7 @@ def main() -> int:
 
     if not no_summary:
         print(f"\n{HEADER}Count:{RESET}  {HEADER}Type + Location:{RESET}")
-        for dimm_key in sorted(summary):
+        for dimm_key in cast(str, natsorted(summary)):
             summary_data = summary.get(dimm_key, {})
             count = summary_data.get("Count", 0)
             locations = ">, <".join(summary_data.get("Location", "<unknown>"))
