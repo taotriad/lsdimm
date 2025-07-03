@@ -524,7 +524,7 @@ def parse_output(data: list[str], **kwargs: Any) -> dict[str, dict[str, Any]]:
                 if "manufacturer" in quirks:
                     tmp_dimm_manufacturer = dimm_manufacturer
                     if dimm_manufacturer in vendor_quirks["exact"]:
-                        dimm_manufacturer = vendor_quirks["exact"][dimm_manufacturer]
+                        tmp_dimm_manufacturer = vendor_quirks["exact"][dimm_manufacturer]
                     else:
                         for affix in vendor_quirks["affixes"]:
                             if dimm_manufacturer.startswith(affix):
