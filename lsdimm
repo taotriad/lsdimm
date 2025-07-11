@@ -6,6 +6,8 @@
 # Copyright David Weinehall.
 # SPDX-License-Identifier: MIT
 
+# pylint: disable=too-many-lines
+
 """
 This program shows information about the memory configuration of a system
 in a terse manner.
@@ -38,6 +40,7 @@ dmidecode_paths: list[str] = ["/usr/sbin/dmidecode", "/sbin/dmidecode"]
 ARGUMENT: str = "\033[0;32m"              # green
 DIM: str = "\033[38;5;240m\033[1m"        # grey + dim + bold
 ERROR: str = "\033[0;31m"                 # red
+WARNING: str = "\033[1;33m"               # yellow + bright
 HEADER: str = "\033[1;37m"                # white + bright
 OPTION: str = "\033[0;36m"                # cyan
 PROGRAMNAME: str = "\033[1;37m"           # white + bright
@@ -348,7 +351,7 @@ vendor_quirks: dict[str, dict[str, str]] = {
 }
 
 program_name: str = "lsdimm"
-program_version: str = "0.0.6"
+program_version: str = "0.0.7"
 program_copyright: str = "Copyright © 2025 David Weinehall"
 program_license: str = "This is free software; see the source for copying conditions.  " \
                        "There is NO\n"
@@ -468,6 +471,79 @@ def configure_ansicodes(use_ansicodes: str = "auto") -> None:
         DIM = ""
         OPTION = ""
         ARGUMENT = ""
+
+
+def normalise_str_to_bytes(string: str) -> int:
+    """
+    Given a value with units, normalise it to bytes.
+    Note: Typically invalid size strings return 0 as size,
+    but if the string happens to end with a valid unit this function
+    will throw an exception that should be caught.
+
+        Parameters:
+            string (str): A string with units
+        Returns:
+            (int): The value in bytes
+    """
+    value = 0
+    # To allow modifying for KiB, etc. instead.
+    base: int = 1000
+
+    unit_lookup = {
+        "kB": base ** 1,
+        "MB": base ** 2,
+        "GB": base ** 3,
+        "TB": base ** 4,
+        "PB": base ** 5,
+        "EB": base ** 6,
+        "ZB": base ** 7,
+        "YB": base ** 8,
+    }
+
+    if string.isnumeric():
+        value = int(string)
+    else:
+        for unit, multiplier in unit_lookup.items():
+            if string.endswith(unit):
+                value = int(string.removesuffix(unit).strip()) * multiplier
+                break
+
+    return value
+
+
+def normalise_bytes_to_str(value: int) -> str:
+    """
+    Convert a value in bytes into a normalised string.
+
+        Parameters:
+            value (int):
+        Returns:
+            (str): The human readable value
+    """
+    suffix: str = ""
+    # To allow modifying for KiB, etc. instead.
+    base: int = 1000
+
+    suffixes: tuple[str, ...] = (
+        " bytes",    # base ** 1
+        "kB",       # base ** 2
+        "MB",       # base ** 3
+        "GB",       # base ** 4
+        "TB",       # base ** 5
+        "PB",       # base ** 6
+        "EB",       # base ** 7
+        "ZB",       # base ** 8
+        "YB",       # base ** 9
+    )
+
+    tmp_value: float = float(value)
+
+    for i, suffix in enumerate(suffixes):
+        if tmp_value < base or i >= len(suffixes) - 1:
+            break
+        tmp_value /= base ** 1
+
+    return f"{int(tmp_value)}{suffix}"
 
 
 # pylint: disable-next=too-many-branches,too-many-locals,too-many-statements
@@ -888,6 +964,8 @@ def main() -> int:
 
     summary: dict[str, dict[str, Any]] = {}
 
+    mem_total_bytes: int = 0
+
     for dimm_handle, dimm in dimms.items():
         row: list[str] = []
         row.append(dimm_handle)
@@ -905,6 +983,13 @@ def main() -> int:
         row.append(dimm_part_number)
         rows.append(row)
 
+        try:
+            tmp = normalise_str_to_bytes(dimm_size)
+            mem_total_bytes += tmp
+        except (ValueError, TypeError):
+            print(f"{WARNING}Warning{RESET}: Could not convert DIMM-size {dimm_size} "
+                  "to bytes; ignoring.")
+
         dimm_key: str = ""
         if "manufacturer" in summary_keys:
             dimm_key += f"{dimm_manufacturer} "
@@ -921,12 +1006,15 @@ def main() -> int:
         summary[dimm_key]["Count"] += 1
         summary[dimm_key]["Location"].append(dimm_handle)
 
+    mem_total: str = normalise_bytes_to_str(mem_total_bytes)
+
     if output_format == "json":
         output_dict: dict[str, dict[str, Any]] = {}
         if not no_stats:
             output_dict = {**output_dict, **dimms}
         if not no_summary:
             output_dict["Summary"] = copy.deepcopy(summary)
+            output_dict["Summary"]["Total"] = mem_total
         json_output: str = json.dumps(output_dict, indent=2)
         print(json_output)
         return 0
@@ -979,6 +1067,8 @@ def main() -> int:
             if locations:
                 locations = f"<{locations}>"
             print(f"{count:>6}  {dimm_key}: [{locations}]")
+
+        print(f"\n{HEADER}Total:{RESET} {mem_total}")
 
     return 0
 
