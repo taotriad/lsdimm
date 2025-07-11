@@ -22,7 +22,10 @@ PYLINT_ENABLE := useless-suppression
 MYPY_FLAGS := --follow-imports silent --explicit-package-bases --ignore-missing --disallow-untyped-calls --disallow-untyped-defs --disallow-incomplete-defs --check-untyped-defs --disallow-untyped-decorators --warn-redundant-casts --warn-unused-ignores
 
 
-bin: checks
+build: bin checks
+
+.PHONY: bin
+bin:
 	@mkdir -p bin && devtools/mangle_source.py lsdimm > bin/lsdimm && chmod a+x bin/lsdimm
 
 clean:
