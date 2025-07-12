@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 """
-This program replaces he shebang of a Python 3 with a shebang that works
+This program replaces the shebang of a Python 3 with a shebang that works
 on systems where the default Python isn't the most recent version installed
 on the system.
 """
