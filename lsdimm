@@ -340,7 +340,7 @@ vendor_quirks: dict[str, dict[str, str]] = {
 }
 
 PROGRAM_NAME: str = "lsdimm"
-PROGRAM_VERSION: str = "0.0.8"
+PROGRAM_VERSION: str = "0.0.9"
 PROGRAM_COPYRIGHT: str = "Copyright © 2025-2026 David Weinehall"
 PROGRAM_LICENSE: str = "This is free software; see the source for copying conditions.  " \
                        "There is NO\n" \
@@ -482,15 +482,14 @@ def normalise_str_to_bytes(string: str, **kwargs: Any) -> int:
             (int): The value in bytes
     """
     value = 0
-    base: int = 1000
+    base: int = 1024
     kib_base: int = 1024
     force_base: str = kwargs.get("force_base", "auto")
 
-    match force_base:
-        case "1000":
-            kib_base = 1000
-        case "1024":
-            base = 1024
+    if force_base == "1000":
+        base = 1000
+    elif force_base == "1024":
+        base = 1024
 
     unit_lookup = {
         "kB": base ** 1,
@@ -502,15 +501,15 @@ def normalise_str_to_bytes(string: str, **kwargs: Any) -> int:
         "ZB": base ** 7,
         "YB": base ** 8,
 
-        "kiB": kib_base ** 1,
-        "KiB": kib_base ** 1,
-        "MiB": kib_base ** 2,
-        "GiB": kib_base ** 3,
-        "TiB": kib_base ** 4,
-        "PiB": kib_base ** 5,
-        "EiB": kib_base ** 6,
-        "ZiB": kib_base ** 7,
-        "YiB": kib_base ** 8,
+        "kiB": base ** 1,
+        "KiB": base ** 1,
+        "MiB": base ** 2,
+        "GiB": base ** 3,
+        "TiB": base ** 4,
+        "PiB": base ** 5,
+        "EiB": base ** 6,
+        "ZiB": base ** 7,
+        "YiB": base ** 8,
     }
 
     if string.isnumeric():
@@ -534,19 +533,19 @@ def normalise_bytes_to_str(value: int) -> str:
             (str): The human readable value
     """
     suffix: str = ""
-    # To allow modifying for KiB, etc. instead.
-    base: int = 1000
+    # To allow modifying for kB, etc. instead.
+    base: int = 1024
 
     suffixes: tuple[str, ...] = (
         " bytes",    # base ** 1
-        "kB",       # base ** 2
-        "MB",       # base ** 3
-        "GB",       # base ** 4
-        "TB",       # base ** 5
-        "PB",       # base ** 6
-        "EB",       # base ** 7
-        "ZB",       # base ** 8
-        "YB",       # base ** 9
+        "KiB",       # base ** 2
+        "MiB",       # base ** 3
+        "GiB",       # base ** 4
+        "TiB",       # base ** 5
+        "PiB",       # base ** 6
+        "EiB",       # base ** 7
+        "ZiB",       # base ** 8
+        "YiB",       # base ** 9
     )
 
     tmp_value: float = float(value)
@@ -632,10 +631,10 @@ def parse_output(data: list[str], **kwargs: Any) -> dict[str, dict[str, Any]]:
                                     # but longer entries are added at the end of the JEDEC
                                     # ID list. Hence we identify the prefix in order,
                                     # and the suffix in reverse order.
-                                    for affix in reversed(vendor_quirks["affixes"]):
-                                        if dimm_manufacturer.endswith(affix):
+                                    for affix2 in reversed(vendor_quirks["affixes"]):
+                                        if dimm_manufacturer.endswith(affix2):
                                             tmp_dimm_manufacturer += \
-                                                f" [{vendor_quirks['affixes'][affix]}]"
+                                                f" [{vendor_quirks['affixes'][affix2]}]"
                     dimm_manufacturer = tmp_dimm_manufacturer
                 dimm_part_number = dimms["tmp"].get("Part Number", "<empty>")
                 dimms[dimm_handle] = {
