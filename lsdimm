@@ -48,17 +48,6 @@ RESET: str = "\033[0m"                    # reset all attributes
 SEPARATOR: str = "\033[38;5;240m\033[1m"  # grey + dim + bold
 
 
-# In some cases the voltage information may be incorrect
-# Options:
-#   "Minimum Voltage"
-#   "Maximum Voltage"
-#   "Configured Voltage"
-#   "Heuristic"  (Configured Voltage unless it's less than 0.25V this may need to be adjusted down
-#                 if some type of low power DIMM is released that consumes less than that)
-voltage_source: str = "Heuristic"
-voltage_limit: float = 0.25
-
-
 class SortColumn(IntEnum):
     """
     Sort column for the DIMM list.
@@ -350,13 +339,13 @@ vendor_quirks: dict[str, dict[str, str]] = {
     },
 }
 
-program_name: str = "lsdimm"
-program_version: str = "0.0.7"
-program_copyright: str = "Copyright © 2025 David Weinehall"
-program_license: str = "This is free software; see the source for copying conditions.  " \
-                       "There is NO\n"
-program_license += "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
-program_authors: str = "Written by David Weinehall."
+PROGRAM_NAME: str = "lsdimm"
+PROGRAM_VERSION: str = "0.0.8"
+PROGRAM_COPYRIGHT: str = "Copyright © 2025-2026 David Weinehall"
+PROGRAM_LICENSE: str = "This is free software; see the source for copying conditions.  " \
+                       "There is NO\n" \
+                       "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+PROGRAM_AUTHORS: str = "Written by David Weinehall."
 
 
 def usage() -> int:
@@ -364,7 +353,7 @@ def usage() -> int:
     Display usage information for the program.
     """
 
-    print(f"{PROGRAMNAME}{program_name}{RESET} [OPTION]...")
+    print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET} [OPTION]...")
     print()
     print("Display information about memory configuration in a terse manner.")
     print()
@@ -433,12 +422,12 @@ def version() -> int:
     Display version information for the program.
     """
 
-    print(f"{PROGRAMNAME}{program_name}{RESET} {program_version}")
+    print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET} {PROGRAM_VERSION}")
     print()
-    print(program_copyright)
-    print(program_license)
+    print(PROGRAM_COPYRIGHT)
+    print(PROGRAM_LICENSE)
     print()
-    print(program_authors)
+    print(PROGRAM_AUTHORS)
     return 0
 
 
@@ -473,7 +462,7 @@ def configure_ansicodes(use_ansicodes: str = "auto") -> None:
         ARGUMENT = ""
 
 
-def normalise_str_to_bytes(string: str) -> int:
+def normalise_str_to_bytes(string: str, **kwargs: Any) -> int:
     """
     Given a value with units, normalise it to bytes.
     Note: Typically invalid size strings return 0 as size,
@@ -482,12 +471,26 @@ def normalise_str_to_bytes(string: str) -> int:
 
         Parameters:
             string (str): A string with units
+            **kwargs (dict[str, Any]): Keyword arguments
+                force_base (str): Normally the base will be inferred from the unit;
+                                  1000 for kB, etc., 1024 for KiB, etc.
+                                  You can change this behaviour by using option.
+                                  "auto"; infer unit
+                                  "1000"; 1000 as base unit
+                                  "1024"; 1024 as base unit
         Returns:
             (int): The value in bytes
     """
     value = 0
-    # To allow modifying for KiB, etc. instead.
     base: int = 1000
+    kib_base: int = 1024
+    force_base: str = kwargs.get("force_base", "auto")
+
+    match force_base:
+        case "1000":
+            kib_base = 1000
+        case "1024":
+            base = 1024
 
     unit_lookup = {
         "kB": base ** 1,
@@ -498,6 +501,16 @@ def normalise_str_to_bytes(string: str) -> int:
         "EB": base ** 6,
         "ZB": base ** 7,
         "YB": base ** 8,
+
+        "kiB": kib_base ** 1,
+        "KiB": kib_base ** 1,
+        "MiB": kib_base ** 2,
+        "GiB": kib_base ** 3,
+        "TiB": kib_base ** 4,
+        "PiB": kib_base ** 5,
+        "EiB": kib_base ** 6,
+        "ZiB": kib_base ** 7,
+        "YiB": kib_base ** 8,
     }
 
     if string.isnumeric():
@@ -558,7 +571,16 @@ def parse_output(data: list[str], **kwargs: Any) -> dict[str, dict[str, Any]]:
         Returns:
             (dict[str, dict[str, Any]]): A dictionary with information for each DIMM.
     """
-    global voltage_source  # pylint: disable=global-statement
+    # In some cases the voltage information may be incorrect
+    # Options:
+    #   "Minimum Voltage"
+    #   "Maximum Voltage"
+    #   "Configured Voltage"
+    #   "Heuristic"  (Configured Voltage unless it's less than 0.25V; this may need to be adjusted
+    #                 down if some type of low power DIMM is released that consumes less than that)
+    voltage_source: str = "Heuristic"
+    voltage_limit: float = 0.25
+
     dimms: dict[str, dict[str, Any]] = {"tmp": {}}
     block: bool = False
     quirks: list[str] = kwargs.get("quirks", [])
@@ -685,15 +707,15 @@ def main() -> int:
         if arg == "--color":
             i += 1
             if i >= len(sys.argv):
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Missing argument for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Missing argument for "
                       f"{OPTION}--color{RESET}.",
                       file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
             color = sys.argv[i]
             if color not in ("always", "auto", "never"):
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument for "
                       f"{OPTION}--color{RESET}; "
                       f"{ARGUMENT}WHEN{RESET} must be one of:",
                       file=sys.stderr)
@@ -706,7 +728,7 @@ def main() -> int:
                     color_options += f"{ARGUMENT}{color_option}{RESET}"
 
                 print(color_options, file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
             configure_ansicodes(use_ansicodes=color)
@@ -716,10 +738,10 @@ def main() -> int:
         if arg == "--fix-quirks":
             i += 1
             if i >= len(sys.argv):
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Missing argument for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Missing argument for "
                       f"{OPTION}--fix-quirks{RESET}.",
                       file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
 
@@ -729,7 +751,7 @@ def main() -> int:
             invalid_args: set[str] = set(quirks) - valid_quirks
 
             if invalid_args:
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument(s) for "
                       f"{OPTION}--fix-quirks{RESET}; "
                       f"{ARGUMENT}QUIRK{SEPARATOR},{ARGUMENT}...{RESET} must be one of:",
                       file=sys.stderr)
@@ -742,25 +764,25 @@ def main() -> int:
                     string += f"{ARGUMENT}{quirk}{RESET}"
 
                 print(string, file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
 
             if "all" in quirks and len(quirks) > 1:
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument(s) for "
                       f"{OPTION}--fix-quirks{RESET}; "
                       f"{ARGUMENT}all{RESET} cannot be combined with other arguments.",
                       file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
 
             if "none" in quirks and len(quirks) > 1:
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument(s) for "
                       f"{OPTION}--fix-quirks{RESET}; "
                       f"{ARGUMENT}none{RESET} cannot be combined with other arguments.",
                       file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
 
@@ -775,15 +797,15 @@ def main() -> int:
         if arg == "--format":
             i += 1
             if i >= len(sys.argv):
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Missing argument for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Missing argument for "
                       f"{OPTION}--format{RESET}.",
                       file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
             output_format = sys.argv[i]
             if output_format not in ("default", "json", "text"):
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument for "
                       f"{OPTION}--format{RESET}; "
                       f"{ARGUMENT}FORMAT{RESET} must be one of:",
                       file=sys.stderr)
@@ -796,7 +818,7 @@ def main() -> int:
                     format_options += f"{ARGUMENT}{format_option}{RESET}"
 
                 print(format_options, file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
             if output_format == "default":
@@ -827,17 +849,17 @@ def main() -> int:
         if arg == "--sort-column":
             i += 1
             if i >= len(sys.argv):
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Missing argument for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Missing argument for "
                       f"{OPTION}--sort-column{RESET}.",
                       file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
 
             sort_column = sort_column_lookup.get(sys.argv[i], SortColumn.INVALID)
 
             if sort_column == -1:
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument for "
                       f"{OPTION}--sort-column{RESET}; "
                       f"{ARGUMENT}SORT_COLUMN{RESET} must be one of:",
                       file=sys.stderr)
@@ -850,7 +872,7 @@ def main() -> int:
                     columns += f"{ARGUMENT}{column}{RESET}"
 
                 print(columns, file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
             i += 1
@@ -859,10 +881,10 @@ def main() -> int:
         if arg == "--summary-keys":
             i += 1
             if i >= len(sys.argv):
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Missing argument for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Missing argument for "
                       f"{OPTION}--summary-keys{RESET}.",
                       file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
 
@@ -873,7 +895,7 @@ def main() -> int:
             invalid_args = set(summary_keys) - valid_summary_keys
 
             if invalid_args:
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument(s) for "
                       f"{OPTION}--summary-keys{RESET}; "
                       f"{ARGUMENT}SUMMARY_KEY{SEPARATOR},{ARGUMENT}...{RESET} must be one of:",
                       file=sys.stderr)
@@ -886,25 +908,25 @@ def main() -> int:
                     string += f"{ARGUMENT}{summary_key}{RESET}"
 
                 print(string, file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
 
             if "all" in summary_keys and len(summary_keys) > 1:
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument(s) for "
                       f"{OPTION}--summary-keys{RESET}; "
                       f"{ARGUMENT}all{RESET} cannot be combined with other arguments.",
                       file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
 
             if "none" in summary_keys and len(summary_keys) > 1:
-                print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument(s) for "
+                print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument(s) for "
                       f"{OPTION}--summary-keys{RESET}; "
                       f"{ARGUMENT}none{RESET} cannot be combined with other arguments.",
                       file=sys.stderr)
-                print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+                print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
                       file=sys.stderr)
                 sys.exit(errno.EINVAL)
 
@@ -916,17 +938,17 @@ def main() -> int:
             i += 1
             continue
 
-        print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid argument.",
+        print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid argument.",
               file=sys.stderr)
-        print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+        print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
               file=sys.stderr)
         sys.exit(errno.EINVAL)
 
     if no_stats and no_summary:
-        print(f"{PROGRAMNAME}{program_name}{RESET}: Invalid arguments; "
+        print(f"{PROGRAMNAME}{PROGRAM_NAME}{RESET}: Invalid arguments; "
               f"{OPTION}--no-stats{RESET} cannot be combined with {OPTION}--no-summary{RESET}.",
               file=sys.stderr)
-        print(f"Try “{PROGRAMNAME}{program_name}{RESET} help“ for more information.",
+        print(f"Try “{PROGRAMNAME}{PROGRAM_NAME}{RESET} help“ for more information.",
               file=sys.stderr)
         sys.exit(errno.EINVAL)
 
