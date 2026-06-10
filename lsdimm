@@ -483,7 +483,6 @@ def normalise_str_to_bytes(string: str, **kwargs: Any) -> int:
     """
     value = 0
     base: int = 1024
-    kib_base: int = 1024
     force_base: str = kwargs.get("force_base", "auto")
 
     if force_base == "1000":
