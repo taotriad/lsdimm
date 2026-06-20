@@ -44,10 +44,12 @@ def main() -> int:
             0 on success, errno on failure
     """
     lines = []
+    filename: str = ""
 
     if len(sys.argv) == 2:
+        filename = sys.argv[1]
         try:
-            with open(sys.argv[1], "r", encoding="utf-8") as f:
+            with open(filename, "r", encoding="utf-8") as f:
                 lines = f.read().splitlines()
         except FileNotFoundError:
             print("File not found.")
@@ -69,11 +71,12 @@ def main() -> int:
         lines.pop(0)
         lines = hack + lines
     else:
-        print("File does not start with a supported Python 3 shebang line;")
-        print("supported shebangs are:")
+        print(f"File {filename} does not start with a supported Python 3 shebang line;",
+              file=sys.stderr)
+        print("supported shebangs are:", file=sys.stderr)
         for shebang in valid_shebangs:
-            print(f"  {shebang}")
-        print("Ignoring.")
+            print(f"  {shebang}", file=sys.stderr)
+        print("Ignoring.\n", file=sys.stderr)
 
     for line in lines:
         print(line)
